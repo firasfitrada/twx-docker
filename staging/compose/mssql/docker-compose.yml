@@ -1,0 +1,82 @@
+# docker-compose.yml
+# https://github.com/firasfitrada
+
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2019-CU28-ubuntu-20.04
+    container_name: ${PROJECT_NAME}_db
+    user: root
+    ports:
+      - "$DB_PUBLISH_PORT:1433"
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P ${DB_ADMIN_PASSWORD} -h -1 -Q "SELECT 1" -C -N
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    environment:
+      - "SA_PASSWORD=${DB_ADMIN_PASSWORD}"
+      - "ACCEPT_EULA=Y"
+      - "MSSQL_AGENT_ENABLED=true"
+    volumes:
+      - ./mssql-data/data:/var/opt/mssql/data
+      - ./mssql-data/log:/var/opt/mssql/log
+      - ./mssql-data/secrets:/var/opt/mssql/secrets
+      
+  mssql-init:
+    image: thingworx/mssql-init-twx:latest
+    container_name: ${PROJECT_NAME}_init
+    entrypoint: bash -c -x "/usr/local/bin/db-check.sh && /usr/local/bin/db-setup.sh && sleep infinity"
+    healthcheck:
+      test: [ "CMD-SHELL", "grep 'success' tmp/status.txt || exit 1" ]
+      interval: 15s
+      retries: 5
+    depends_on:
+      mssql:
+        condition: service_healthy
+    environment:
+      - "DATABASE_HOST=mssql"
+      - "DATABASE_PORT=1433"
+      - "DATABASE_ADMIN_USERNAME=${DB_ADMIN_USERNAME}"
+      - "DATABASE_ADMIN_PASSWORD=${DB_ADMIN_PASSWORD}"
+      - "TWX_DATABASE_USERNAME=${TWX_DB_USERNAME}"
+      - "TWX_DATABASE_SCHEMA=${TWX_DB_SCHEMA}"
+      - "TWX_DATABASE_PASSWORD=${TWX_DB_PASSWORD}"
+
+  platform:
+    image: thingworx/platform-mssql:latest
+    container_name: ${PROJECT_NAME}_platform
+    healthcheck:
+      test: curl -f localhost:8080/Thingworx/health
+      interval: 15s
+    depends_on:
+      mssql-init:
+        condition: service_healthy
+    ports:
+      - "$HTTP_TWX_PUBLISH_PORT:8080"
+    environment:
+#      - "LS_USERNAME=${PTCUSERNAME}"
+#      - "LS_PASSWORD=${PTCPASSWORD}"
+      - "ENABLE_HTTP=true"
+      - "CATALINA_OPTS=${JAVA_HEAP_MIN} ${JAVA_HEAP_MAX}"
+      - "DATABASE_HOST=mssql"
+      - "DATABASE_PORT=1433"
+      - "TWX_DATABASE_USERNAME=${TWX_DB_USERNAME}"
+      - "TWX_DATABASE_SCHEMA=${TWX_DB_SCHEMA}"
+      - "TWX_DATABASE_PASSWORD=${TWX_DB_PASSWORD}"
+      - "THINGWORX_INITIAL_ADMIN_PASSWORD=${TWX_ADMIN_PASSWORD}"
+      - "THINGWORX_INITIAL_METRICS_USER_PASSWORD=${TWX_METRICS_USER_PASSWORD}"
+      - "EXTPKG_IMPORT_POLICY_ENABLED=true"
+      - "EXTPKG_IMPORT_POLICY_ALLOW_JARRES=true"
+      - "EXTPKG_IMPORT_POLICY_ALLOW_JSRES=true"
+      - "EXTPKG_IMPORT_POLICY_ALLOW_CSSRES=true"
+      - "EXTPKG_IMPORT_POLICY_ALLOW_JSONRES=true"
+      - "EXTPKG_IMPORT_POLICY_ALLOW_WEBAPPRES=true"
+      - "EXTPKG_IMPORT_POLICY_ALLOW_ENTITIES=true"
+      - "EXTPKG_IMPORT_POLICY_ALLOW_EXTENTITIES=true"
+      - "ENABLE_CONTENT_SECURITY_POLICY_FILTER=true"
+    volumes:
+      - ./ThingWorxFoundation/ThingworxStorage:/ThingworxStorage
+      - ./ThingWorxFoundation/ThingworxPlatform:/ThingworxPlatform
+      - ./ThingWorxFoundation/ThingworxBackupStorage:/ThingworxBackupStorage
+      - ./ThingWorxFoundation/tomcat:/app/opt/apache-tomcat
+#      - ./docker-entrypoint.sh:/docker-entrypoint.sh      
