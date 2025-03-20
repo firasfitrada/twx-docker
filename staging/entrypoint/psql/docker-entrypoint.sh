@@ -55,13 +55,13 @@ if [ "${DOCKER_DEBUG}" == "true" ]; then
 fi
 
 # merge overrides and logback.xml if override is not empty, and put in final location
-# fsize=$(wc -c <"/app/tmp/logback.override.xml")
-# if [ $fsize -gt 1 ]; then
-#   echo "Merging logback configuration with overrides"
-#   /opt/xmlmerge/bin/xmlmerge "logback.xml" "/app/tmp/logback.override.xml" "${THINGWORX_PLATFORM_SETTINGS}/logback.xml"
-# else
-#   cp -f logback.xml "${THINGWORX_PLATFORM_SETTINGS}"
-# fi
+fsize=$(wc -c <"/app/tmp/logback.override.xml")
+if [ $fsize -gt 1 ]; then
+  echo "Merging logback configuration with overrides"
+  /opt/xmlmerge/bin/xmlmerge "logback.xml" "/app/tmp/logback.override.xml" "${THINGWORX_PLATFORM_SETTINGS}/logback.xml"
+else
+  cp -f logback.xml "${THINGWORX_PLATFORM_SETTINGS}"
+fi
 )
 
 # copy over dev license if it exists and using trial license
@@ -74,6 +74,7 @@ fi
 # move files in variablized directories to their final location
 install-var-dirs.sh
 
+# auto replaced the tomcat configuration webapps folder
 # cp -r $CATALINA_HOME/webapps/. $CATALINA_BASE/webapps/
 # cp -r -n $CATALINA_HOME/conf/. $CATALINA_BASE/conf/
 # cp -r /app/tmp/CATALINA_BASE/.  $CATALINA_BASE/conf/
@@ -87,8 +88,8 @@ else
   cp /app/tmp/web.xml "$CATALINA_BASE/webapps/Thingworx/WEB-INF/web.xml"
 fi
 
-# mkdir -p $CATALINA_BASE/temp
-# chmod -R 750 $CATALINA_BASE
+mkdir -p $CATALINA_BASE/temp
+chmod -R 750 $CATALINA_BASE
 
 # remove all temp files/folders, not needed after this
 rm -rf "/app/tmp/"
@@ -98,6 +99,34 @@ if [ ! -f "/ThingworxPlatform/java-truststore/cacerts" ]; then
   mkdir -p /ThingworxPlatform/java-truststore/
   cp -v "$(dirname $(dirname $(readlink -f $(which java))))/lib/security/cacerts" /ThingworxPlatform/java-truststore/
 fi
+
+# additional feature
+# parameter for ScriptTimeOut
+PLATFORM_JSON_FILE="${THINGWORX_PLATFORM_SETTINGS}"/platform-settings.json
+sed -i "s/\"ScriptTimeout\": [0-9]\+/\"ScriptTimeout\": $THINGWORX_PLATFORM_SCRIPTTIMEOUT/" "$PLATFORM_JSON_FILE"
+
+# server.xml tomcat config parameter
+TOMCAT_SERVERXML_FILE="/app/opt/apache-tomcat/conf/server.xml"
+sed -i -E \
+    -e "s/(keepAliveTimeout=\")[0-9]+\"/\1$TOMCAT_KEEPALIVETIMEOUT\"/" \
+    -e "s/(connectionTimeout=\")[0-9]+\"/\1$TOMCAT_CONNECTIONTIMEOUT\"/" \
+    -e "s/(maxConnections=\")[0-9]+\"/\1$TOMCAT_MAXCONNECTION\"/" \
+    -e "s/(maxThread=\")[0-9]+\"/\1$TOMCAT_MAXTHREADS\"/" \
+    "$TOMCAT_SERVERXML_FILE"
+
+#logging.properties config
+LOGGING_PROPERTIES_FILE="/app/opt/apache-tomcat/conf/logging.properties"
+CURRENT1_LEVEL=$(grep -oP '(?<=1catalina\.org\.apache\.juli\.AsyncFileHandler\.level = )\w+' "$LOGGING_PROPERTIES_FILE")
+CURRENT2_LEVEL=$(grep -oP '(?<=2localhost\.org\.apache\.juli\.AsyncFileHandler\.level = )\w+' "$LOGGING_PROPERTIES_FILE")
+CURRENT3_LEVEL=$(grep -oP '(?<=3manager\.org\.apache\.juli\.AsyncFileHandler\.level = )\w+' "$LOGGING_PROPERTIES_FILE")
+CURRENT4_LEVEL=$(grep -oP '(?<=4host-manager\.org\.apache\.juli\.AsyncFileHandler\.level = )\w+' "$LOGGING_PROPERTIES_FILE")
+CURRENT5_LEVEL=$(grep -oP '(?<=java\.util\.logging\.ConsoleHandler\.level = )\w+' "$LOGGING_PROPERTIES_FILE")
+
+sed -i "s/\(1catalina\.org\.apache\.juli\.AsyncFileHandler\.level *= *\)$CURRENT1_LEVEL/\1$TOMCAT_CATALINA_LEVEL/" "$LOGGING_PROPERTIES_FILE"
+sed -i "s/\(2localhost\.org\.apache\.juli\.AsyncFileHandler\.level *= *\)$CURRENT2_LEVEL/\1$TOMCAT_LOCALHOST_LEVEL/" "$LOGGING_PROPERTIES_FILE"
+sed -i "s/\(3manager\.org\.apache\.juli\.AsyncFileHandler\.level *= *\)$CURRENT3_LEVEL/\1$TOMCAT_MANAGER_LEVEL/" "$LOGGING_PROPERTIES_FILE"
+sed -i "s/\(4host-manager\.org\.apache\.juli\.AsyncFileHandler\.level *= *\)$CURRENT4_LEVEL/\1$TOMCAT_HOSTMANAGER_LEVEL/" "$LOGGING_PROPERTIES_FILE"
+sed -i "s/\(java\.util\.logging\.ConsoleHandler\.level *= *\)$CURRENT5_LEVEL/\1$TOMCAT_JAVAUTIL_LEVEL/" "$LOGGING_PROPERTIES_FILE"
 
 # workaround for https://github.com/docker/docker/issues/9547
 sync

@@ -17,6 +17,22 @@ create_thingworx_docker() {
     deploy_thingworx;
 }
 
+check_thingworx_license(){
+    if [[ "$PTC_AUTO_LICENSE" == "true" ]]; then
+        sudo sed -i -E 's/^[ \t]*#([ \t]*- "[^"]*LS_USER[^"]*")/\1/' "${DB_PLATFORM}_${PROJECT_NAME}/docker-compose.yml"
+        sudo sed -i -E 's/^[ \t]*#([ \t]*- "[^"]*LS_PASS[^"]*")/\1/' "${DB_PLATFORM}_${PROJECT_NAME}/docker-compose.yml"
+        echo -e "\033[32;5m[✔]\033[0m ThingWorx license using Connected Mode"
+    else
+        echo -e "\033[32;5m[✔]\033[0m ThingWorx license using Disconnected Mode"
+        if [ -f "${DB_PLATFORM}_${PROJECT_NAME}/license.bin" ]; then
+            echo -e "\033[32;5m[✔]\033[0m The license.bin file was found."
+            sudo sed -i 's/^[ \t]*#\([ \t]*- \..*license.bin.*\)/\1/' "${DB_PLATFORM}_${PROJECT_NAME}/docker-compose.yml"
+        else
+            echo -e "\033[32;5m[✔]\033[0m ThingWorx will be using a trial license."
+        fi
+    fi
+}
+
 deploy_thingworx(){
     USERNAME="twadmin"
     UID_NUMBER=1337
@@ -44,12 +60,14 @@ deploy_thingworx(){
         echo -e "\033[32;5m[✔]\033[0m \033[33;1mThingWorxFoundation\033[0m directory has been sucessfully created.";
     fi
 
+    check_thingworx_license;
     docker compose -f ${DB_PLATFORM}_${PROJECT_NAME}/docker-compose.yml up -d;
     echo -e "\033[32;5m[✔]\033[0m ThingWorx docker \033[32;1m$PROJECT_NAME\033[0m project has been created.";
 }
 
 recreate_thingworx_docker(){
     echo -e "\033[33;5m[----- Rereate ThingWorx Docker -----]\033[0m";
+    check_thingworx_license;
     sudo sed -i 's/^[ \t]*#\([ \t]*- \..*docker-entrypoint.sh.*\)/\1/' "${DB_PLATFORM}_${PROJECT_NAME}/docker-compose.yml"
     docker compose -f ${DB_PLATFORM}_${PROJECT_NAME}/docker-compose.yml up -d;
 }
